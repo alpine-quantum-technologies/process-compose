@@ -384,6 +384,11 @@ func (p *ProjectRunner) StartProcess(name string) error {
 }
 
 func (p *ProjectRunner) StopProcess(name string) error {
+    if p.isShuttingDown {
+		log.Error().Msg("process-compose is shutting down")
+		return fmt.Errorf("process-compose is shutting down")
+	}
+
 	log.Info().Msgf("Stopping %s", name)
 	proc := p.getRunningProcess(name)
 	if proc == nil {
@@ -402,7 +407,13 @@ func (p *ProjectRunner) StopProcess(name string) error {
 }
 
 func (p *ProjectRunner) StopProcesses(names []string) (map[string]string, error) {
-	stopped := make(map[string]string)
+    stopped := make(map[string]string)
+
+    if p.isShuttingDown {
+		log.Error().Msg("process-compose is shutting down")
+		return stopped, fmt.Errorf("process-compose is shutting down")
+	}
+
 	successes := 0
 	for _, name := range names {
 		if err := p.StopProcess(name); err == nil {
@@ -611,6 +622,11 @@ func (p *ProjectRunner) shutDownAndWait(shutdownOrder []*Process) {
 }
 
 func (p *ProjectRunner) ShutDownProject() error {
+	if p.isShuttingDown {
+		log.Error().Msg("process-compose is shutting down")
+		return fmt.Errorf("process-compose is shutting down")
+	}
+
 	p.runProcMutex.Lock()
 	p.isShuttingDown = true
 
