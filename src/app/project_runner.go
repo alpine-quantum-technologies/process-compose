@@ -61,6 +61,7 @@ type ProjectRunner struct {
 	refRate              time.Duration
 	withRecursiveMetrics bool
 	procCompleteChannel  chan int
+	isShuttingDown       bool
 }
 
 // RestartCall represents an in-flight restart operation
@@ -77,6 +78,7 @@ func (p *ProjectRunner) init() {
 	p.initProcessStates()
 	p.initProcessLogs()
 	p.initRestartCoalescing()
+	p.isShuttingDown = false
 }
 
 func (p *ProjectRunner) Run() error {
@@ -362,6 +364,11 @@ func (p *ProjectRunner) removeRunningProcess(process *Process) int {
 }
 
 func (p *ProjectRunner) StartProcess(name string) error {
+	if p.isShuttingDown {
+		log.Error().Msg("process-compose is shutting down")
+		return fmt.Errorf("process-compose is shutting down")
+	}
+
 	proc := p.getRunningProcess(name)
 	if proc != nil {
 		log.Error().Msgf("Process %s is already running", name)
@@ -416,6 +423,11 @@ func (p *ProjectRunner) StopProcesses(names []string) (map[string]string, error)
 }
 
 func (p *ProjectRunner) RestartProcess(name string) error {
+	if p.isShuttingDown {
+		log.Error().Msg("process-compose is shutting down")
+		return fmt.Errorf("process-compose is shutting down")
+	}
+
 	p.restartMutex.Lock()
 
 	// Check if restart is already in progress
@@ -600,7 +612,7 @@ func (p *ProjectRunner) shutDownAndWait(shutdownOrder []*Process) {
 
 func (p *ProjectRunner) ShutDownProject() error {
 	p.runProcMutex.Lock()
-	defer p.runProcMutex.Unlock()
+	p.isShuttingDown = true
 
 	shutdownOrder := []*Process{}
 	if p.isOrderedShutdown {
@@ -628,9 +640,12 @@ func (p *ProjectRunner) ShutDownProject() error {
 	for _, proc := range shutdownOrder {
 		proc.prepareForShutDown()
 	}
+	p.runProcMutex.Unlock()
 
 	p.shutDownAndWait(shutdownOrder)
+	p.runProcMutex.Lock()
 	p.cancelAppFn()
+	p.runProcMutex.Unlock()
 	return nil
 }
 
@@ -723,6 +738,11 @@ func (p *ProjectRunner) TruncateProcessLogs(name string) error {
 }
 
 func (p *ProjectRunner) ScaleProcess(name string, scale int) error {
+	if p.isShuttingDown {
+		log.Error().Msg("process-compose is shutting down")
+		return fmt.Errorf("process-compose is shutting down")
+	}
+
 	if scale < 1 {
 		err := fmt.Errorf("cannot scale process %s to a negative or zero value %d", name, scale)
 		log.Err(err).Msg("scale failed")
